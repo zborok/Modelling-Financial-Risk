@@ -1,0 +1,1173 @@
+---
+title: "Individual Assignment 2"
+author: "Zervaan Borok"
+date: "2/12/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Part 1
+
+```{r}
+# Load libraries
+
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(dplyr)
+```
+
+## Part 1 (a): Reading in Data
+
+```{r}
+df <- read.csv("C:\\Users\\zerva\\Documents\\AM14\\25_Portfolios_5x5.csv", header = TRUE, skip = 15)
+df <- df[1:1146,]
+
+names(df)[names(df) == "X"] <- "Date"
+df <- as.data.frame(lapply(df, as.numeric))
+df$Date <- parse_date_time(df$Date, "ym")
+
+tail(df)
+```
+
+
+```{r}
+names(df) <- gsub("\\.", "_", names(df))
+names(df)
+```
+
+
+```{r}
+df_FF <- read.csv("C:\\Users\\zerva\\Documents\\AM14\\F-F_Research_Data_Factors.csv", header = TRUE, skip = 3)
+df_FF <- df_FF[1:1146,]
+
+names(df_FF)[names(df_FF) == "X"] <- "Date"
+names(df_FF)[names(df_FF) == "Mkt.RF"] <- "Mkt_RF"
+df_FF <- as.data.frame(lapply(df_FF, as.numeric))
+df_FF$Date <- parse_date_time(df_FF$Date, "ym")
+
+tail(df_FF)
+```
+
+
+```{r}
+df_combined <- left_join(df, df_FF, by = "Date")
+tail(df_combined)
+```
+
+
+```{r}
+df_combined <- df_combined %>%
+  mutate(MKT_RF_DIFF = Mkt_RF - RF)
+```
+
+## Part 1 (b): Run Basic CAPM Regression
+
+```{r fig.width=14, fig.height=6}
+names_1 <- c()
+r_squared_1 <- c()
+realized_return_1 <- c()
+pred_return_1 <- c()
+reg_1 <- c()
+for (i in 2:26) {
+  reg_1[[i]] <- summary(lm(as.matrix(df_combined[i]) ~ as.matrix(MKT_RF_DIFF) + as.matrix(RF), data = df_combined))
+  names_1[[i]] <- colnames(df_combined[i])
+  print(ggplot(data = df_combined, aes(x = Date)) + 
+                        geom_line(aes(y = df_combined[ , i] - RF, color="Realized Returns")) + 
+                        geom_line(aes(y = as.vector(reg_1[[i]]$coefficients[2,1]) * MKT_RF_DIFF, color="Predicted Returns")) +
+                        labs(y = "Excess Returns", colour = "Legend") +
+                        ggtitle(names_1[[i]]) +
+                        theme(
+                        plot.title = element_text(size = 15, face = "bold", hjust = 0.5, vjust = 2.5),
+                        axis.title.x = element_text(size = 12, face = "bold", margin = margin(t = 10)),
+                        axis.title.y = element_text(size = 12, face = "bold", margin = margin(r = 10)),
+                        axis.text.x = element_text(size = 11),
+                        axis.text.y = element_text(size = 11),
+                        legend.title = element_text(size = 12, face = "bold"),
+                        legend.text = element_text(size = 10.5),
+                        legend.key.height = unit(1, 'cm'),
+                        legend.key.width = unit(1.5, 'cm'),
+                        legend.position = "right", legend.margin=margin(l = 30)) +
+                        guides(color = guide_legend(override.aes = list(size = 1.5)))
+        )
+  pred_return_1[[i]] <- mean(reg_1[[i]]$coefficients[2,1] * df_combined$MKT_RF_DIFF)
+  realized_return_1[[i]] <- mean(df_combined[ , i] - df_combined$RF)
+  r_squared_1[[i]] <- reg_1[[i]]$adj.r.squared
+}
+```
+
+
+```{r}
+pred_return_1 <- as.data.frame(as.matrix(pred_return_1))
+pred_return_1 <- pred_return_1[-c(1),]
+pred_return_1 <- as.data.frame(as.list(pred_return_1), col.names = names(df_combined[2:26]), row.names = "Predicted_Returns")
+```
+
+
+```{r}
+realized_return_1 <- as.data.frame(as.matrix(realized_return_1))
+realized_return_1 <- realized_return_1[-c(1),]
+realized_return_1 <- as.data.frame(as.list(realized_return_1), col.names = names(df_combined[2:26]), row.names = "Realized_Returns")
+```
+
+
+```{r}
+realized_vs_pred_return_1 <- rbind(pred_return_1, realized_return_1)
+realized_vs_pred_return_1 <- as.data.frame(t(realized_vs_pred_return_1))
+realized_vs_pred_return_1 <- realized_vs_pred_return_1 %>%
+  add_column(Group = c('A', 'B', 'B', 'B', 'A', 'C', 'C', 'C', 'C', 'C', 'D', 'D', 'D', 'D', 'D', 'E', 'E', 'E', 'E', 'E', 'A', 'F', 'F', 'F', 'A'), .after="Realized_Returns")
+realized_vs_pred_return_1[,1:2]
+```
+
+## Part 1 (c): Plot Predicted Vs Realized Returns
+
+```{r fig.width=18, fig.height=9}
+library(ggrepel)
+ggplot(data = realized_vs_pred_return_1, aes(x = Predicted_Returns, y = Realized_Returns, label = rownames(realized_vs_pred_return_1))) +
+  geom_point(size = 2) +
+  geom_label_repel(aes(fill = factor(Group)), color = 'white', fontface = 'bold', min.segment.length = 0, segment.color = 'black', show.legend = FALSE) +
+  ggtitle("Predicted Vs. Realized Excess Returns") +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, vjust = 2.5),
+    axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11)
+    ) +
+  geom_abline() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 20), limits = c(0.0, 0.75)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 15), limits = c(0.00, 1.4)) +
+  labs(y = "Realized Returns", x = "Predicted Returns")
+```
+
+
+
+```{r}
+r_squared_1 <- as.data.frame(as.matrix(r_squared_1))
+r_squared_1 <- r_squared_1[-c(1),]
+r_squared_1 <- as.data.frame(as.list(r_squared_1), col.names = names(df_combined[2:26]), row.names = "R_Squared_CAPM")
+```
+
+
+
+## Part 1 (d): Run Fama French Regression Model
+
+```{r fig.width=14, fig.height=6}
+names_2 <- c()
+r_squared_2 <- c()
+realized_return_2 <- c()
+pred_return_2 <- c()
+reg_2 <- c()
+for (i in 2:26) {
+  reg_2[[i]] <- summary(lm(as.matrix(df_combined[i]) ~ as.matrix(MKT_RF_DIFF) + as.matrix(SMB) + as.matrix(HML) + as.matrix(RF), data = df_combined))
+  names_2[[i]] <- colnames(df_combined[i])
+  print(ggplot(data = df_combined, aes(x = Date)) + 
+                        geom_line(aes(y = df_combined[ , i] - RF, color="Realized Returns")) + 
+                        geom_line(aes(y = as.vector(reg_2[[i]]$coefficients[2,1]) * MKT_RF_DIFF, color="Predicted Returns")) +
+                        labs(y = "Excess Returns", colour = "Legend") +
+                        ggtitle(names_2[[i]]) +
+                        theme(
+                        plot.title = element_text(size = 15, face = "bold", hjust = 0.5, vjust = 2.5),
+                        axis.title.x = element_text(size = 12, face = "bold", margin = margin(t = 10)),
+                        axis.title.y = element_text(size = 12, face = "bold", margin = margin(r = 10)),
+                        axis.text.x = element_text(size = 11),
+                        axis.text.y = element_text(size = 11),
+                        legend.title = element_text(size = 12, face = "bold"),
+                        legend.text = element_text(size = 10.5),
+                        legend.key.height = unit(1, 'cm'),
+                        legend.key.width = unit(1.5, 'cm'),
+                        legend.position = "right", legend.margin=margin(l = 30)) +
+                        guides(color = guide_legend(override.aes = list(size = 1.5)))
+        )
+  pred_return_2[[i]] <- mean(reg_2[[i]]$coefficients[2,1] * df_combined$MKT_RF_DIFF)
+  realized_return_2[[i]] <- mean(df_combined[ , i] - df_combined$RF)
+  r_squared_2[[i]] <- reg_2[[i]]$adj.r.squared
+}
+```
+
+
+```{r}
+pred_return_2 <- as.data.frame(as.matrix(pred_return_2))
+pred_return_2 <- pred_return_2[-c(1),]
+pred_return_2 <- as.data.frame(as.list(pred_return_2), col.names = names(df_combined[2:26]), row.names = "Predicted_Returns")
+```
+
+
+```{r}
+realized_return_2 <- as.data.frame(as.matrix(realized_return_2))
+realized_return_2 <- realized_return_2[-c(1),]
+realized_return_2 <- as.data.frame(as.list(realized_return_2), col.names = names(df_combined[2:26]), row.names = "Realized_Returns")
+```
+
+
+```{r}
+realized_vs_pred_return_2 <- rbind(pred_return_2, realized_return_2)
+realized_vs_pred_return_2 <- as.data.frame(t(realized_vs_pred_return_2))
+realized_vs_pred_return_2 <- realized_vs_pred_return_2 %>%
+  add_column(Group = c('A', 'B', 'B', 'B', 'A', 'C', 'C', 'C', 'C', 'C', 'D', 'D', 'D', 'D', 'D', 'E', 'E', 'E', 'E', 'E', 'A', 'F', 'F', 'F', 'A'), .after="Realized_Returns")
+realized_vs_pred_return_2[,1:2]
+```
+
+
+```{r fig.width=18, fig.height=9}
+ggplot(data = realized_vs_pred_return_2, aes(x = Predicted_Returns, y = Realized_Returns, label = rownames(realized_vs_pred_return_2))) +
+  geom_point(size = 2) +
+  geom_label_repel(aes(fill = factor(Group)), color = 'white', fontface = 'bold', min.segment.length = 0, segment.color = 'black', show.legend = FALSE) +
+  ggtitle("Predicted Vs. Realized Excess Returns") +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, vjust = 2.5),
+    axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11)
+    ) +
+  geom_abline() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 20), limits = c(0.0, 0.555)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 15), limits = c(0.00, 1.4)) +
+  labs(y = "Realized Returns", x = "Predicted Returns") 
+```
+
+
+
+
+```{r}
+r_squared_2 <- as.data.frame(as.matrix(r_squared_2))
+r_squared_2 <- r_squared_2[-c(1),]
+r_squared_2 <- as.data.frame(as.list(r_squared_2), col.names = names(df_combined[2:26]), row.names = "R_Squared_Fama_French")
+```
+
+
+
+```{r}
+CAPM_vs_FF_R2 <- rbind(r_squared_1, r_squared_2)
+CAPM_vs_FF_R2 <- as.data.frame(t(CAPM_vs_FF_R2))
+CAPM_vs_FF_R2 <- CAPM_vs_FF_R2 %>%
+  mutate(Diff = R_Squared_Fama_French - R_Squared_CAPM)
+```
+
+
+```{r}
+CAPM_vs_FF_R2 <- cbind(Portfolio = rownames(CAPM_vs_FF_R2), CAPM_vs_FF_R2)
+rownames(CAPM_vs_FF_R2) <- 1:nrow(CAPM_vs_FF_R2)
+CAPM_vs_FF_R2
+```
+
+
+```{r}
+print(paste0("The average R Squared over the 25 Portfolios is ", round(mean(CAPM_vs_FF_R2$R_Squared_CAPM), digits = 6), " under the CAPM Model"))
+print('')
+print(paste0("The average R Squared over the 25 Portfolios is ", round(mean(CAPM_vs_FF_R2$R_Squared_Fama_French), digits = 6), " under the Fama French 3 Factor Model"))
+```
+
+
+We can see that for all 25 portfolios formed on book-to-market, the Fama French 3 Factor Model is more accurate than the CAPM model. For example, the Fama French Model accounts for over 30% more variation than the CAPM model
+does for the portfolio labelled "SMALL_Hi_BM". The CAPM model is a good rudimentary and versatile model, but it only uses one factor to explain portfolio returns. Additionally, this factor is the difference between the 
+index return and the risk-free rate. Thus, if a given portfolio has similar weights and holdings to the market index, the CAPM model will be able to price it well. However, if a given portfolio has wildly different weights and holdings when compared to the market index, the CAPM model will likely struggle to accurately price it. The plots of mean realized excess returns against the predicted excess returns further supports this conclusion. We can see that the plot corresponding to the Fama French Model does a better job of pricing the portfolios than the CAPM model.
+
+
+
+```{r fig.width=18, fig.height=9}
+library(reshape)
+CAPM_vs_FF_R2_plot_prep <- select(CAPM_vs_FF_R2, -c(Diff))
+CAPM_vs_FF_R2_melt <- melt(CAPM_vs_FF_R2_plot_prep, "Portfolio")
+
+ggplot(data = CAPM_vs_FF_R2_melt, aes(x = Portfolio, y = value)) +
+  geom_bar(aes(fill=variable), stat = "identity", position = position_dodge(width=0.4), width = 0.4) +
+  ggtitle("CAPM Vs Fama French") +
+  labs(y = "R_Squared") +
+                        theme(
+                        plot.title = element_text(size = 15, face = "bold", hjust = 0.5, vjust = 2.5),
+                        axis.title.x = element_text(size = 12, face = "bold", margin = margin(t = 10)),
+                        axis.title.y = element_text(size = 12, face = "bold", margin = margin(r = 10)),
+                        axis.text.x = element_text(size = 11, angle=-40, hjust=0.1),
+                        axis.text.y = element_text(size = 11),
+                        legend.title = element_text(size = 12, face = "bold"),
+                        legend.text = element_text(size = 10.5),
+                        legend.key.height = unit(1, 'cm'),
+                        legend.key.width = unit(1, 'cm'),
+                        legend.position = "right", legend.margin=margin(l = 20))+
+  guides(fill=guide_legend(title="Legend"))
+
+```
+
+
+## Part 1 (e): Analysis of Additional Portfolios
+
+
+### Portfolios Formed on Operating Profitability
+
+```{r}
+df_OP <- read.csv("C:\\Users\\zerva\\Documents\\AM14\\Portfolios_Formed_on_OP.csv", header = TRUE, skip = 24)
+df_OP <- df_OP[1:702,]
+
+names(df_OP)[names(df_OP) == "X"] <- "Date"
+df_OP <- as.data.frame(lapply(df_OP, as.numeric))
+df_OP$Date <- parse_date_time(df_OP$Date, "ym")
+```
+
+
+```{r}
+df_FF_OP <- df_FF[445:1146,]
+
+df_combined_OP <- left_join(df_OP, df_FF_OP, by = "Date")
+df_combined_OP <- df_combined_OP %>%
+  mutate(MKT_RF_DIFF = Mkt_RF - RF)
+```
+
+
+```{r}
+df_combined_OP <- df_combined_OP[-c(2:9)]
+names(df_combined_OP) <- gsub("\\.", "_", names(df_combined_OP))
+
+head(df_combined_OP)
+```
+
+
+```{r}
+r_squared_3 <- c()
+realized_return_3 <- c()
+pred_return_3 <- c()
+reg_3 <- c()
+
+for (i in 2:11) {
+  reg_3[[i]] <- summary(lm(as.matrix(df_combined_OP[i]) ~ as.matrix(MKT_RF_DIFF) + as.matrix(SMB) + as.matrix(HML) + as.matrix(RF), data = df_combined_OP))
+  pred_return_3[[i]] <- mean(reg_3[[i]]$coefficients[2,1] * df_combined_OP$MKT_RF_DIFF)
+  realized_return_3[[i]] <- mean(df_combined_OP[ , i] - df_combined_OP$RF)
+  r_squared_3[[i]] <- reg_3[[i]]$adj.r.squared
+}
+```
+
+
+```{r}
+pred_return_3 <- as.data.frame(as.matrix(pred_return_3))
+pred_return_3 <- pred_return_3[-c(1),]
+pred_return_3 <- as.data.frame(as.list(pred_return_3), col.names = names(df_combined_OP[2:11]), row.names = "Predicted_Returns")
+```
+
+
+```{r}
+realized_return_3 <- as.data.frame(as.matrix(realized_return_3))
+realized_return_3 <- realized_return_3[-c(1),]
+realized_return_3 <- as.data.frame(as.list(realized_return_3), col.names = names(df_combined_OP[2:11]), row.names = "Realized_Returns")
+```
+
+
+```{r}
+realized_vs_pred_return_3 <- rbind(pred_return_3, realized_return_3)
+realized_vs_pred_return_3 <- as.data.frame(t(realized_vs_pred_return_3))
+realized_vs_pred_return_3 <- realized_vs_pred_return_3 %>%
+  add_column(Group = c('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'), .after="Realized_Returns")
+realized_vs_pred_return_3[,1:2]
+```
+
+
+```{r fig.width=18, fig.height=9}
+ggplot(data = realized_vs_pred_return_3, aes(x = Predicted_Returns, y = Realized_Returns, label = rownames(realized_vs_pred_return_3))) +
+  geom_point(size = 2) +
+  geom_label_repel(aes(fill = factor(Group)), color = 'white', fontface = 'bold', min.segment.length = 0, segment.color = 'black', show.legend = FALSE) +
+  ggtitle("Predicted Vs. Realized Excess Returns") +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, vjust = 2.5),
+    axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11)
+    ) +
+  geom_abline() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 20), limits = c(0.0, 0.30)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 15), limits = c(0.00, 0.8)) +
+  labs(y = "Realized Returns", x = "Predicted Returns") 
+```
+
+
+```{r}
+r_squared_3 <- as.data.frame(as.matrix(r_squared_3))
+r_squared_3 <- r_squared_3[-c(1),]
+r_squared_3 <- as.data.frame(as.list(r_squared_3), col.names = names(df_combined_OP[2:11]), row.names = "R_Squared")
+r_squared_3 <- as.data.frame(t(r_squared_3))
+r_squared_3 <- cbind(Operating_Profitability_Portfolios = rownames(r_squared_3), r_squared_3)
+rownames(r_squared_3) <- 1:nrow(r_squared_3)
+r_squared_3
+```
+
+
+```{r}
+print(paste0("The average R Squared over the 10 Portfolios is ", round(mean(r_squared_3$R_Squared), digits = 6), " under the Fama French 3 Factor Model"))
+```
+
+
+### Portfolios Formed on Investment
+
+```{r}
+df_INV <- read.csv("C:\\Users\\zerva\\Documents\\AM14\\Portfolios_Formed_on_INV.csv", header = TRUE, skip = 17)
+df_INV <- df_INV[1:702,]
+
+names(df_INV)[names(df_INV) == "X"] <- "Date"
+df_INV <- as.data.frame(lapply(df_INV, as.numeric))
+df_INV$Date <- parse_date_time(df_INV$Date, "ym")
+```
+
+
+```{r}
+df_combined_INV <- left_join(df_INV, df_FF_OP, by = "Date")
+df_combined_INV <- df_combined_INV %>%
+  mutate(MKT_RF_DIFF = Mkt_RF - RF)
+```
+
+
+```{r}
+df_combined_INV <- df_combined_INV[-c(2:9)]
+names(df_combined_INV) <- gsub("\\.", "_", names(df_combined_INV))
+
+head(df_combined_INV)
+```
+
+
+```{r}
+r_squared_4 <- c()
+realized_return_4 <- c()
+pred_return_4 <- c()
+reg_4 <- c()
+
+for (i in 2:11) {
+  reg_4[[i]] <- summary(lm(as.matrix(df_combined_INV[i]) ~ as.matrix(MKT_RF_DIFF) + as.matrix(SMB) + as.matrix(HML) + as.matrix(RF), data = df_combined_INV))
+  pred_return_4[[i]] <- mean(reg_4[[i]]$coefficients[2,1] * df_combined_INV$MKT_RF_DIFF)
+  realized_return_4[[i]] <- mean(df_combined_INV[ , i] - df_combined_INV$RF)
+  r_squared_4[[i]] <- reg_4[[i]]$adj.r.squared
+}
+```
+
+
+```{r}
+pred_return_4 <- as.data.frame(as.matrix(pred_return_4))
+pred_return_4 <- pred_return_4[-c(1),]
+pred_return_4 <- as.data.frame(as.list(pred_return_4), col.names = names(df_combined_INV[2:11]), row.names = "Predicted_Returns")
+```
+
+
+```{r}
+realized_return_4 <- as.data.frame(as.matrix(realized_return_4))
+realized_return_4 <- realized_return_4[-c(1),]
+realized_return_4 <- as.data.frame(as.list(realized_return_4), col.names = names(df_combined_INV[2:11]), row.names = "Realized_Returns")
+```
+
+
+```{r}
+realized_vs_pred_return_4 <- rbind(pred_return_4, realized_return_4)
+realized_vs_pred_return_4 <- as.data.frame(t(realized_vs_pred_return_4))
+realized_vs_pred_return_4 <- realized_vs_pred_return_4 %>%
+  add_column(Group = c('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'), .after="Realized_Returns")
+realized_vs_pred_return_4[,1:2]
+```
+
+
+```{r fig.width=18, fig.height=9}
+ggplot(data = realized_vs_pred_return_4, aes(x = Predicted_Returns, y = Realized_Returns, label = rownames(realized_vs_pred_return_4))) +
+  geom_point(size = 2) +
+  geom_label_repel(aes(fill = factor(Group)), color = 'white', fontface = 'bold', min.segment.length = 0, segment.color = 'black', show.legend = FALSE) +
+  ggtitle("Predicted Vs. Realized Excess Returns") +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, vjust = 2.5),
+    axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11)
+    ) +
+  geom_abline() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 20), limits = c(0.0, 0.30)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 15), limits = c(0.00, 0.9)) +
+  labs(y = "Realized Returns", x = "Predicted Returns") 
+```
+
+
+```{r}
+r_squared_4 <- as.data.frame(as.matrix(r_squared_4))
+r_squared_4 <- r_squared_4[-c(1),]
+r_squared_4 <- as.data.frame(as.list(r_squared_4), col.names = names(df_combined_INV[2:11]), row.names = "R_Squared")
+r_squared_4 <- as.data.frame(t(r_squared_4))
+r_squared_4 <- cbind(Investment_Portfolios = rownames(r_squared_4), r_squared_4)
+rownames(r_squared_4) <- 1:nrow(r_squared_4)
+r_squared_4
+```
+
+
+```{r}
+print(paste0("The average R Squared over the 10 Portfolios is ", round(mean(r_squared_4$R_Squared), digits = 6), " under the Fama French 3 Factor Model"))
+```
+
+
+### Portfolios Formed on Dividend Yield
+
+```{r}
+df_DY <- read.csv("C:\\Users\\zerva\\Documents\\AM14\\Portfolios_Formed_on_D-P.csv", header = TRUE, skip = 19)
+df_DY <- df_DY[1:1134,]
+
+names(df_DY)[names(df_DY) == "X"] <- "Date"
+df_DY <- as.data.frame(lapply(df_DY, as.numeric))
+df_DY$Date <- parse_date_time(df_DY$Date, "ym")
+```
+
+
+```{r}
+df_FF_DY <- df_FF[13:1146,]
+
+df_combined_DY <- left_join(df_DY, df_FF_DY, by = "Date")
+df_combined_DY <- df_combined_DY %>%
+  mutate(MKT_RF_DIFF = Mkt_RF - RF)
+```
+
+
+```{r}
+df_combined_DY <- df_combined_DY[-c(2:10)]
+names(df_combined_DY) <- gsub("\\.", "_", names(df_combined_DY))
+
+head(df_combined_DY)
+```
+
+
+
+```{r}
+r_squared_5 <- c()
+realized_return_5 <- c()
+pred_return_5 <- c()
+reg_5 <- c()
+
+for (i in 2:11) {
+  reg_5[[i]] <- summary(lm(as.matrix(df_combined_DY[i]) ~ as.matrix(MKT_RF_DIFF) + as.matrix(SMB) + as.matrix(HML) + as.matrix(RF), data = df_combined_DY))
+  pred_return_5[[i]] <- mean(reg_5[[i]]$coefficients[2,1] * df_combined_DY$MKT_RF_DIFF)
+  realized_return_5[[i]] <- mean(df_combined_DY[ , i] - df_combined_DY$RF)
+  r_squared_5[[i]] <- reg_5[[i]]$adj.r.squared
+}
+```
+
+
+```{r}
+pred_return_5 <- as.data.frame(as.matrix(pred_return_5))
+pred_return_5 <- pred_return_5[-c(1),]
+pred_return_5 <- as.data.frame(as.list(pred_return_5), col.names = names(df_combined_DY[2:11]), row.names = "Predicted_Returns")
+```
+
+
+```{r}
+realized_return_5 <- as.data.frame(as.matrix(realized_return_5))
+realized_return_5 <- realized_return_5[-c(1),]
+realized_return_5 <- as.data.frame(as.list(realized_return_5), col.names = names(df_combined_DY[2:11]), row.names = "Realized_Returns")
+```
+
+
+```{r}
+realized_vs_pred_return_5 <- rbind(pred_return_5, realized_return_5)
+realized_vs_pred_return_5 <- as.data.frame(t(realized_vs_pred_return_5))
+realized_vs_pred_return_5 <- realized_vs_pred_return_5 %>%
+  add_column(Group = c('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'), .after="Realized_Returns")
+realized_vs_pred_return_5[,1:2]
+```
+
+
+```{r fig.width=18, fig.height=9}
+ggplot(data = realized_vs_pred_return_5, aes(x = Predicted_Returns, y = Realized_Returns, label = rownames(realized_vs_pred_return_5))) +
+  geom_point(size = 2) +
+  geom_label_repel(aes(fill = factor(Group)), color = 'white', fontface = 'bold', min.segment.length = 0, segment.color = 'black', show.legend = FALSE) +
+  ggtitle("Predicted Vs. Realized Excess Returns") +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, vjust = 2.5),
+    axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11)
+    ) +
+  geom_abline() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 20), limits = c(0.0, 0.55)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 15), limits = c(0.00, 0.9)) +
+  labs(y = "Realized Returns", x = "Predicted Returns") 
+```
+
+
+```{r}
+r_squared_5 <- as.data.frame(as.matrix(r_squared_5))
+r_squared_5 <- r_squared_5[-c(1),]
+r_squared_5 <- as.data.frame(as.list(r_squared_5), col.names = names(df_combined_DY[2:11]), row.names = "R_Squared")
+r_squared_5 <- as.data.frame(t(r_squared_5))
+r_squared_5 <- cbind(Dividend_Yield_Portfolios = rownames(r_squared_5), r_squared_5)
+rownames(r_squared_5) <- 1:nrow(r_squared_5)
+r_squared_5
+```
+
+
+```{r}
+print(paste0("The average R Squared over the 10 Portfolios is ", round(mean(r_squared_5$R_Squared), digits = 6), " under the Fama French 3 Factor Model"))
+```
+
+
+### Portfolios Formed on Momentum
+
+```{r}
+df_MM <- read.csv("C:\\Users\\zerva\\Documents\\AM14\\10_Portfolios_Prior_12_2.csv", header = TRUE, skip = 10)
+df_MM <- df_MM[1:1140,]
+
+names(df_MM)[names(df_MM) == "X"] <- "Date"
+df_MM <- as.data.frame(lapply(df_MM, as.numeric))
+df_MM$Date <- parse_date_time(df_MM$Date, "ym")
+```
+
+
+```{r}
+df_FF_MM <- df_FF[7:1146,]
+
+df_combined_MM <- left_join(df_MM, df_FF_MM, by = "Date")
+df_combined_MM <- df_combined_MM %>%
+  mutate(MKT_RF_DIFF = Mkt_RF - RF)
+```
+
+
+```{r}
+names(df_combined_MM) <- gsub("\\.", "_", names(df_combined_MM))
+
+head(df_combined_MM)
+```
+
+
+```{r}
+r_squared_6 <- c()
+realized_return_6 <- c()
+pred_return_6 <- c()
+reg_6 <- c()
+
+for (i in 2:11) {
+  reg_6[[i]] <- summary(lm(as.matrix(df_combined_MM[i]) ~ as.matrix(MKT_RF_DIFF) + as.matrix(SMB) + as.matrix(HML) + as.matrix(RF), data = df_combined_MM))
+  pred_return_6[[i]] <- mean(reg_6[[i]]$coefficients[2,1] * df_combined_MM$MKT_RF_DIFF)
+  realized_return_6[[i]] <- mean(df_combined_MM[ , i] - df_combined_MM$RF)
+  r_squared_6[[i]] <- reg_6[[i]]$adj.r.squared
+}
+```
+
+
+```{r}
+pred_return_6 <- as.data.frame(as.matrix(pred_return_6))
+pred_return_6 <- pred_return_6[-c(1),]
+pred_return_6 <- as.data.frame(as.list(pred_return_6), col.names = names(df_combined_MM[2:11]), row.names = "Predicted_Returns")
+```
+
+
+```{r}
+realized_return_6 <- as.data.frame(as.matrix(realized_return_6))
+realized_return_6 <- realized_return_6[-c(1),]
+realized_return_6 <- as.data.frame(as.list(realized_return_6), col.names = names(df_combined_MM[2:11]), row.names = "Realized_Returns")
+```
+
+
+```{r}
+realized_vs_pred_return_6 <- rbind(pred_return_6, realized_return_6)
+realized_vs_pred_return_6 <- as.data.frame(t(realized_vs_pred_return_6))
+realized_vs_pred_return_6 <- realized_vs_pred_return_6 %>%
+  add_column(Group = c('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'), .after="Realized_Returns")
+realized_vs_pred_return_6[,1:2]
+```
+
+
+```{r fig.width=18, fig.height=9}
+ggplot(data = realized_vs_pred_return_6, aes(x = Predicted_Returns, y = Realized_Returns, label = rownames(realized_vs_pred_return_6))) +
+  geom_point(size = 2) +
+  geom_label_repel(aes(fill = factor(Group)), color = 'white', fontface = 'bold', min.segment.length = 0, segment.color = 'black', show.legend = FALSE) +
+  ggtitle("Predicted Vs. Realized Excess Returns") +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, vjust = 2.5),
+    axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11)
+    ) +
+  geom_abline() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 20), limits = c(0.0, 0.6)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 15), limits = c(0.00, 1.3)) +
+  labs(y = "Realized Returns", x = "Predicted Returns") 
+```
+
+
+```{r}
+r_squared_6 <- as.data.frame(as.matrix(r_squared_6))
+r_squared_6 <- r_squared_6[-c(1),]
+r_squared_6 <- as.data.frame(as.list(r_squared_6), col.names = names(df_combined_MM[2:11]), row.names = "R_Squared")
+r_squared_6 <- as.data.frame(t(r_squared_6))
+r_squared_6 <- cbind(Momentum_Portfolios = rownames(r_squared_6), r_squared_6)
+rownames(r_squared_6) <- 1:nrow(r_squared_6)
+r_squared_6
+```
+
+
+```{r}
+print(paste0("The average R Squared over the 10 Portfolios is ", round(mean(r_squared_6$R_Squared), digits = 6), " under the Fama French 3 Factor Model"))
+```
+
+
+### 17 Industry Portfolios
+
+```{r}
+df_17 <- read.csv("C:\\Users\\zerva\\Documents\\AM14\\17_Industry_Portfolios.csv", header = TRUE, skip = 11)
+df_17 <- df_17[1:1146,]
+
+names(df_17)[names(df_17) == "X"] <- "Date"
+df_17 <- as.data.frame(lapply(df_17, as.numeric))
+df_17$Date <- parse_date_time(df_17$Date, "ym")
+```
+
+
+```{r}
+df_FF_17 <- df_FF[1:1146,]
+
+df_combined_17 <- left_join(df_17, df_FF_17, by = "Date")
+df_combined_17 <- df_combined_17 %>%
+  mutate(MKT_RF_DIFF = Mkt_RF - RF)
+
+head(df_combined_17)
+```
+
+
+```{r}
+r_squared_7 <- c()
+realized_return_7 <- c()
+pred_return_7 <- c()
+reg_7 <- c()
+
+for (i in 2:18) {
+  reg_7[[i]] <- summary(lm(as.matrix(df_combined_17[i]) ~ as.matrix(MKT_RF_DIFF) + as.matrix(SMB) + as.matrix(HML) + as.matrix(RF), data = df_combined_17))
+  pred_return_7[[i]] <- mean(reg_7[[i]]$coefficients[2,1] * df_combined_17$MKT_RF_DIFF)
+  realized_return_7[[i]] <- mean(df_combined_17[ , i] - df_combined_17$RF)
+  r_squared_7[[i]] <- reg_7[[i]]$adj.r.squared
+}
+```
+
+
+```{r}
+pred_return_7 <- as.data.frame(as.matrix(pred_return_7))
+pred_return_7 <- pred_return_7[-c(1),]
+pred_return_7 <- as.data.frame(as.list(pred_return_7), col.names = names(df_combined_17[2:18]), row.names = "Predicted_Returns")
+```
+
+
+```{r}
+realized_return_7 <- as.data.frame(as.matrix(realized_return_7))
+realized_return_7 <- realized_return_7[-c(1),]
+realized_return_7 <- as.data.frame(as.list(realized_return_7), col.names = names(df_combined_17[2:18]), row.names = "Realized_Returns")
+```
+
+
+```{r}
+realized_vs_pred_return_7 <- rbind(pred_return_7, realized_return_7)
+realized_vs_pred_return_7 <- as.data.frame(t(realized_vs_pred_return_7))
+realized_vs_pred_return_7
+```
+
+
+```{r fig.width=18, fig.height=9}
+ggplot(data = realized_vs_pred_return_7, aes(x = Predicted_Returns, y = Realized_Returns, label = rownames(realized_vs_pred_return_7))) +
+  geom_point(size = 2) +
+  geom_label_repel(fontface = 'bold', min.segment.length = 0, segment.color = 'black') +
+  ggtitle("Predicted Vs. Realized Excess Returns") +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, vjust = 2.5),
+    axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11)
+    ) +
+  geom_abline() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 20), limits = c(0.0, 0.55)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 15), limits = c(0.00, 1.1)) +
+  labs(y = "Realized Returns", x = "Predicted Returns") 
+```
+
+
+```{r}
+r_squared_7 <- as.data.frame(as.matrix(r_squared_7))
+r_squared_7 <- r_squared_7[-c(1),]
+r_squared_7 <- as.data.frame(as.list(r_squared_7), col.names = names(df_combined_17[2:18]), row.names = "R_Squared")
+r_squared_7 <- as.data.frame(t(r_squared_7))
+r_squared_7 <- cbind(Industry_Portfolios = rownames(r_squared_7), r_squared_7)
+rownames(r_squared_7) <- 1:nrow(r_squared_7)
+r_squared_7
+```
+
+
+```{r}
+print(paste0("The average R Squared over the 17 Industry Portfolios is ", round(mean(r_squared_7$R_Squared), digits = 6), " under the Fama French 3 Factor Model"))
+```
+
+
+### 30 Industry Portfolios
+
+```{r}
+df_30 <- read.csv("C:\\Users\\zerva\\Documents\\AM14\\30_Industry_Portfolios.csv", header = TRUE, skip = 11)
+df_30 <- df_30[1:1146,]
+
+names(df_30)[names(df_30) == "X"] <- "Date"
+df_30 <- as.data.frame(lapply(df_30, as.numeric))
+df_30$Date <- parse_date_time(df_30$Date, "ym")
+```
+
+
+```{r}
+df_FF_30 <- df_FF[1:1146,]
+
+df_combined_30 <- left_join(df_30, df_FF_30, by = "Date")
+df_combined_30 <- df_combined_30 %>%
+  mutate(MKT_RF_DIFF = Mkt_RF - RF)
+
+head(df_combined_30)
+```
+
+
+```{r}
+r_squared_8 <- c()
+realized_return_8 <- c()
+pred_return_8 <- c()
+reg_8 <- c()
+
+for (i in 2:31) {
+  reg_8[[i]] <- summary(lm(as.matrix(df_combined_30[i]) ~ as.matrix(MKT_RF_DIFF) + as.matrix(SMB) + as.matrix(HML) + as.matrix(RF), data = df_combined_30))
+  pred_return_8[[i]] <- mean(reg_8[[i]]$coefficients[2,1] * df_combined_30$MKT_RF_DIFF)
+  realized_return_8[[i]] <- mean(df_combined_30[ , i] - df_combined_30$RF)
+  r_squared_8[[i]] <- reg_8[[i]]$adj.r.squared
+}
+```
+
+
+```{r}
+pred_return_8 <- as.data.frame(as.matrix(pred_return_8))
+pred_return_8 <- pred_return_8[-c(1),]
+pred_return_8 <- as.data.frame(as.list(pred_return_8), col.names = names(df_combined_30[2:31]), row.names = "Predicted_Returns")
+```
+
+
+```{r}
+realized_return_8 <- as.data.frame(as.matrix(realized_return_8))
+realized_return_8 <- realized_return_8[-c(1),]
+realized_return_8 <- as.data.frame(as.list(realized_return_8), col.names = names(df_combined_30[2:31]), row.names = "Realized_Returns")
+```
+
+
+```{r}
+realized_vs_pred_return_8 <- rbind(pred_return_8, realized_return_8)
+realized_vs_pred_return_8 <- as.data.frame(t(realized_vs_pred_return_8))
+realized_vs_pred_return_8
+```
+
+
+```{r fig.width=18, fig.height=9}
+ggplot(data = realized_vs_pred_return_8, aes(x = Predicted_Returns, y = Realized_Returns, label = rownames(realized_vs_pred_return_8))) +
+  geom_point(size = 2) +
+  geom_label_repel(fontface = 'bold', min.segment.length = 0, segment.color = 'black') +
+  ggtitle("Predicted Vs. Realized Excess Returns") +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, vjust = 2.5),
+    axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11)
+    ) +
+  geom_abline() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 20), limits = c(0.0, 0.6)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 15), limits = c(0.00, 1.1)) +
+  labs(y = "Realized Returns", x = "Predicted Returns") 
+```
+
+
+```{r}
+r_squared_8 <- as.data.frame(as.matrix(r_squared_8))
+r_squared_8 <- r_squared_8[-c(1),]
+r_squared_8 <- as.data.frame(as.list(r_squared_8), col.names = names(df_combined_30[2:31]), row.names = "R_Squared")
+r_squared_8 <- as.data.frame(t(r_squared_8))
+r_squared_8 <- cbind(Industry_Portfolios = rownames(r_squared_8), r_squared_8)
+rownames(r_squared_8) <- 1:nrow(r_squared_8)
+r_squared_8
+```
+
+
+```{r}
+print(paste0("The average R Squared over the 30 Industry Portfolios is ", round(mean(r_squared_8$R_Squared), digits = 6), " under the Fama French 3 Factor Model"))
+```
+
+
+### 49 Industry Portfolios
+
+```{r}
+df_49 <- read.csv("C:\\Users\\zerva\\Documents\\AM14\\49_Industry_Portfolios.csv", header = TRUE, skip = 11)
+df_49 <- df_49[1:1146,]
+
+names(df_49)[names(df_49) == "X"] <- "Date"
+df_49 <- as.data.frame(lapply(df_49, as.numeric))
+df_49$Date <- parse_date_time(df_49$Date, "ym")
+```
+
+
+```{r}
+df_FF_49 <- df_FF[1:1146,]
+
+df_combined_49 <- left_join(df_49, df_FF_49, by = "Date")
+df_combined_49 <- df_combined_49 %>%
+  mutate(MKT_RF_DIFF = Mkt_RF - RF)
+
+head(df_combined_49)
+```
+
+
+```{r}
+r_squared_9 <- c()
+realized_return_9 <- c()
+pred_return_9 <- c()
+reg_9 <- c()
+
+for (i in 2:50) {
+  reg_9[[i]] <- summary(lm(as.matrix(df_combined_49[i]) ~ as.matrix(MKT_RF_DIFF) + as.matrix(SMB) + as.matrix(HML) + as.matrix(RF), data = df_combined_49))
+  pred_return_9[[i]] <- mean(reg_9[[i]]$coefficients[2,1] * df_combined_49$MKT_RF_DIFF)
+  realized_return_9[[i]] <- mean(df_combined_49[ , i] - df_combined_49$RF)
+  r_squared_9[[i]] <- reg_9[[i]]$adj.r.squared
+}
+```
+
+
+```{r}
+pred_return_9 <- as.data.frame(as.matrix(pred_return_9))
+pred_return_9 <- pred_return_9[-c(1),]
+pred_return_9 <- as.data.frame(as.list(pred_return_9), col.names = names(df_combined_49[2:50]), row.names = "Predicted_Returns")
+```
+
+
+```{r}
+realized_return_9 <- as.data.frame(as.matrix(realized_return_9))
+realized_return_9 <- realized_return_9[-c(1),]
+realized_return_9 <- as.data.frame(as.list(realized_return_9), col.names = names(df_combined_49[2:50]), row.names = "Realized_Returns")
+```
+
+
+```{r}
+realized_vs_pred_return_9 <- rbind(pred_return_9, realized_return_9)
+realized_vs_pred_return_9 <- as.data.frame(t(realized_vs_pred_return_9))
+realized_vs_pred_return_9
+```
+
+
+```{r fig.width=18, fig.height=9, warning=FALSE}
+ggplot(data = realized_vs_pred_return_9, aes(x = Predicted_Returns, y = Realized_Returns, label = rownames(realized_vs_pred_return_9))) +
+  geom_point(size = 2) +
+  geom_label_repel(fontface = 'bold', min.segment.length = 0, segment.color = 'black') +
+  ggtitle("Predicted Vs. Realized Excess Returns") +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, vjust = 2.5),
+    axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11)
+    ) +
+  geom_abline() +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 20), limits = c(0.0, 0.6)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 15), limits = c(0.00, 1.1)) +
+  labs(y = "Realized Returns", x = "Predicted Returns") 
+```
+
+
+```{r}
+r_squared_9 <- as.data.frame(as.matrix(r_squared_9))
+r_squared_9 <- r_squared_9[-c(1),]
+r_squared_9 <- as.data.frame(as.list(r_squared_9), col.names = names(df_combined_49[2:50]), row.names = "R_Squared")
+r_squared_9 <- as.data.frame(t(r_squared_9))
+r_squared_9 <- cbind(Industry_Portfolios = rownames(r_squared_9), r_squared_9)
+rownames(r_squared_9) <- 1:nrow(r_squared_9)
+r_squared_9
+```
+
+
+```{r}
+print(paste0("The average R Squared over the 49 Industry Portfolios is ", round(mean(r_squared_9$R_Squared), digits = 6), " under the Fama French 3 Factor Model"))
+```
+
+
+```{r}
+r_df <- c(mean(r_squared_3$R_Squared), mean(r_squared_4$R_Squared), mean(r_squared_5$R_Squared), mean(r_squared_6$R_Squared), mean(r_squared_7$R_Squared), mean(r_squared_8$R_Squared), mean(r_squared_9$R_Squared))
+ports <- c("Operating Profitability", "Investment", "Dividend Yield", "Momentum", "17 Industry", "30 Industry", "49 Industry")
+
+r_df <- as.data.frame(r_df)
+ports <- as.data.frame(ports)
+
+r_df2 <- cbind(ports, r_df)
+names(r_df2)[names(r_df2) == "ports"] <- "Portfolios"
+names(r_df2)[names(r_df2) == "r_df"] <- "Average R Squared"
+r_df2
+```
+
+
+From the table above, we can see that the Fama French 3 Factor Model is able to price the operating profitability, investment, dividend yield, and momentum portfolios quite well. It even prices the 17 Industry Portfolios rather well, though notably not as well as the first four sets. The model starts to struggle when it's passed portfolios from the 30 Industry and 49 Industry sets. This is likely partly due to the fact that there are significant outliers present in these two data sets. Additionally, these sets of portfolios incorporate an extremely wide range of industries. Not every industry behaves the same and different industries are subject to different sets of factors that affect their prices. 
+
+
+## Part 1 (f)
+I would add a monthly momentum factor which returns the value of the closing price on the last day of the month minus the closing price on the first day of the month. The resulting values will be either negative, positive, or zero. A positive value would indicate the portfolio has upwards momentum while a negative value would indicate the portfolio has a downwards momentum. A value of zero would indicate that the portfolio has no positive or negative momentum.
+
+
+## Part 1 (g)
+The Fama-French three factor model is a good model, but it is certainly not as good as it gets. Other models that incorporate momentum, dividend payout rate, and other factors have been proven to be more accurate at pricing assets. It should also be noted that the Black-Scholes formula is considered the king of asset pricing formulas.
+
+While the Fama-French three factor model does tend to outperform the CAPM, we should not forget about CAPM entirely. It is a very versatile pricing model which gives us insight as to how the portfolio is related to the market index without taking into account other factors. 
+
+Empirically, it has been shown that neither the three factor model nor the five factor model is the best model. In general, implementation of the Black-Scholes formula via Bayesian statistics is the best way forward. 
+
+
+The validity of the CAPM model can be tested empirically, but not with absolute rigor. The reason for this is because the CAPM formula is heavily dependent on the market portfolio. Over time, the market portfolio has changed drastically and so it is difficult to empirically test the CAPM model.
+
+
+# Part 2
+
+
+## Part 2 (a): Read in Data
+
+```{r}
+library(readxl)
+returns_daily <- read_excel("C:\\Users\\zerva\\Documents\\AM14\\PS1_Daily.xlsx", sheet = "HPR_daily", skip = 1)
+prices_daily <- read_excel("C:\\Users\\zerva\\Documents\\AM14\\PS1_Daily.xlsx", sheet = "Prices_daily", skip = 1)
+
+returns_daily$DATE <- parse_date_time(returns_daily$DATE, "ymd")
+prices_daily$DATE <- parse_date_time(prices_daily$DATE, "ymd")
+head(returns_daily)
+```
+
+
+## Part 2 (b): Calculate Log Returns
+
+```{r}
+log_returns <- returns_daily %>%
+                  mutate(log_MSFT = log(1 + MSFT)) %>%
+                  mutate(log_XOM = log(1 + XOM)) %>%
+                  mutate(log_GE = log(1 + GE)) %>%
+                  mutate(log_JPM = log(1 + JPM)) %>%
+                  mutate(log_INTC = log(1 + INTC)) %>%
+                  mutate(log_C = log(1 + C)) %>%
+                  mutate(log_VWRETD = log(1 + VWRETD)) %>%
+                  mutate(log_SPRTRN = log(1 + SPRTRN))
+
+head(log_returns)
+```
+
+
+```{r}
+log_returns <- subset(log_returns, select = -c(MSFT, XOM, GE, JPM, INTC, C, VWRETD, SPRTRN))
+head(log_returns)
+```
+
+
+## Part 2 (c): ACF Plots for S&P 500 Composite Index Squared Returns and Absolute Returns
+
+```{r}
+acf(log_returns$log_SPRTRN**2)
+```
+
+
+```{r}
+acf(abs(log_returns$log_SPRTRN))
+```
+
+
+## Part 2 (d): Time-Varying Volatility Plot for Microsoft using Moving Average Model
+
+```{r}
+library(roll)
+m_avg_10 <- as.data.frame(roll_sd(log_returns$log_MSFT, width = 50))
+m_avg_10$Date <- log_returns$DATE
+names(m_avg_10)[names(m_avg_10) == "roll_sd(log_returns$log_MSFT, width = 50)"] <- "MSFT_10"
+
+m_avg_20 <- as.data.frame(roll_sd(log_returns$log_MSFT, width = 100))
+m_avg_20$Date <- log_returns$DATE
+names(m_avg_20)[names(m_avg_20) == "roll_sd(log_returns$log_MSFT, width = 100)"] <- "MSFT_20"
+
+m_avg_combined <- left_join(m_avg_10, m_avg_20, by = "Date")
+```
+
+
+```{r fig.width=14, fig.height=6, warning=FALSE}
+ggplot(data = m_avg_combined) +
+  geom_line(aes(x = Date, y = MSFT_10, color = "10 week window"), size = 1) +
+  geom_line(aes(x = Date, y = MSFT_20, color = "20 week window"), size = 1) +
+  ggtitle("MSFT 10 Vs 20 Week Window") +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, vjust = 2.5),
+    axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11),
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10.5),
+    legend.key.height = unit(1, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.position = "right", legend.margin=margin(l = 30)
+    ) +
+  labs(y = "MA of Volatility of Log Returns", x = "Date", colour = "Legend") +
+  guides(color = guide_legend(override.aes = list(size = 1.5))) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10), limits = c(-0.01, 0.06))
+```
+
+
+In light of Modern Portfolio Theory, the results from the above chart indicate that at times, even very secure assets can exhibit noteworthy volatility and so one must choose appropriate windows with which to analyze said volatility. 
+
+## Part 2 (e): Time-Varying Volatility Plot for S&P 500 Composite Index using Moving Average Model
+
+```{r}
+library(roll)
+m_avg_10_2 <- as.data.frame(roll_sd(log_returns$log_SPRTRN, width = 50))
+m_avg_10_2$Date <- log_returns$DATE
+names(m_avg_10_2)[names(m_avg_10_2) == "roll_sd(log_returns$log_SPRTRN, width = 50)"] <- "SPRTRN_10"
+
+m_avg_20_2 <- as.data.frame(roll_sd(log_returns$log_SPRTRN, width = 100))
+m_avg_20_2$Date <- log_returns$DATE
+names(m_avg_20_2)[names(m_avg_20_2) == "roll_sd(log_returns$log_SPRTRN, width = 100)"] <- "SPRTRN_20"
+
+m_avg_combined_2 <- left_join(m_avg_10_2, m_avg_20_2, by = "Date")
+```
+
+
+```{r fig.width=14, fig.height=6, warning=FALSE}
+ggplot(data = m_avg_combined_2) +
+  geom_line(aes(x = Date, y = SPRTRN_10, color = "10 week window"), size = 1) +
+  geom_line(aes(x = Date, y = SPRTRN_20, color = "20 week window"), size = 1) +
+  ggtitle("SPRTRN 10 Vs 20 Week Window") +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, vjust = 2.5),
+    axis.title.x = element_text(size = 14, face = "bold", margin = margin(t = 15)),
+    axis.title.y = element_text(size = 14, face = "bold", margin = margin(r = 15)),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 11),
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10.5),
+    legend.key.height = unit(1, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.position = "right", legend.margin=margin(l = 30)
+    ) +
+  labs(y = "MA of Volatility of Log Returns", x = "Date", colour = "Legend") +
+  guides(color = guide_legend(override.aes = list(size = 1.5))) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10), limits = c(-0.01, 0.06))
+```
+
+
+We can see that the market index exhibits much less volatility than Microsoft, which is to be expected as the market portfolio will not have any firm-specific risk involved.
+
+
+## Part 2 (f): EWMA Model for S&P 500 Composite Index Log Returns
+
+```{r}
+library(qcc)
+ewma(log_returns$log_SPRTRN, center = mean(log_returns$log_SPRTRN),lambda = 0.5, std.dev = 0.01)
+```
+
+
+```{r}
+ewma(log_returns$log_SPRTRN, center = mean(log_returns$log_SPRTRN),lambda = 0.75, std.dev = 0.01)
+```
+
+
+```{r}
+ewma(log_returns$log_SPRTRN, center = mean(log_returns$log_SPRTRN),lambda = 0.94, std.dev = 0.01)
+```
+
+
+Considering the plot above, a sensible choice for the variance would be 0.0001. As the variance is increased, the confidence intervals become wider. The same thing happens when lambda is increased. As lambda is increased, the more recent observations receive heavier and heavier weights as compared to earlier observations and so the confidence intervals become wider.
